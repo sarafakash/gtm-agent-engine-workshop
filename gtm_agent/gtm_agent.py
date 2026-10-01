@@ -58,7 +58,11 @@ def build_prospect_profile(prospect_id: str) -> dict:
         return {"prospect_profile": None, "found": False}
     built = {
         "prospect_id": prospect_id,
-        **rec,
+        "name": rec.get("name"),
+        "email": rec.get("email"),
+        "annual_revenue": rec.get("annual_revenue"),
+        "disqualified": rec.get("disqualified"),
+        "enrichment_source": rec.get("enrichment_source"),
         "engagement_history": data_service.fetch_engagement_history(prospect_id),
         "account_details": data_service.fetch_account_details(prospect_id),
         "tech_stack": data_service.fetch_tech_stack(prospect_id),
@@ -109,11 +113,16 @@ def score_prospect(prospect_profile: dict, offering: dict | None = None) -> dict
         return {"score": None, "error": "Cannot score without a valid offering."}
     # Score against the prospect's saved tech stack of record.
     pid = prospect_profile.get("prospect_id")
+    scoring_profile = {
+        field: prospect_profile[field]
+        for field in ("prospect_id", "name", "annual_revenue", "tech_stack", "account_details")
+        if field in prospect_profile
+    }
     if pid is not None:
-        prospect_profile = {**prospect_profile, "tech_stack": data_service.fetch_tech_stack(pid)}
+        scoring_profile["tech_stack"] = data_service.fetch_tech_stack(pid)
     user = (
         "Offering:\n" + json.dumps(offering, indent=2) +
-        "\n\nProspect profile:\n" + json.dumps(prospect_profile, indent=2)
+        "\n\nProspect profile:\n" + json.dumps(scoring_profile, indent=2)
     )
     result = _scoring_llm.invoke([
         {"role": "system", "content": SCORING_PROMPT},
@@ -128,12 +137,12 @@ def get_prospect(prospect_id: str) -> dict:
     record = data_service.get_prospect_record(prospect_id)
     if record is None:
         return {"prospect": None, "found": False}
-    # Carry the contact fields through, dropping the bulky enrichment blobs the
-    # caller can pull from build_prospect_profile instead.
+    # Return only contact fields; enrichment is available from build_prospect_profile.
     contact = {
         "prospect_id": prospect_id,
-        **{k: v for k, v in record.items()
-           if k not in ("engagement_history", "account_details", "tech_stack")},
+        "name": record.get("name"),
+        "email": record.get("email"),
+        "disqualified": record.get("disqualified"),
     }
     return {"prospect": contact, "found": True}
 
